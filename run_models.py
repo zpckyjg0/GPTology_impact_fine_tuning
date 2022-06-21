@@ -15,14 +15,16 @@
 import torch 
 from torch.utils.data import DataLoader 
 import numpy as np
+
 #HuggingFace Stuff 
 from transformers import AutoTokenizer, AutoModel
 from transformers import GPT2TokenizerFast, GPT2Model, GPT2Config, GPT2LMHeadModel, GPT2ForSequenceClassification
 from transformers import BertTokenizerFast, BertModel, BertConfig, BertForSequenceClassification
-from transformers import DistilBertTokenizerFast, DistilBertModel, DistilBertConfig, DistilBertForSequenceClassification
+
 from transformers import AdamW, get_linear_schedule_with_warmup
 from datasets import load_dataset, load_metric  
 import hickle
+
 # Misc  
 from tqdm import tqdm 
 import argparse 
@@ -31,9 +33,10 @@ import os
 import pickle 
 from sklearn import svm
 
-# TODO: this collate function assumes the inputs are list-- I'm returning tensors
-# Do we keep as tensors and edit this function or what? 
 def collate_fn(batch):
+    """
+    Custom collate function used by the DataLoader to batch the pre-processed sentences. 
+    """
     max_len = max([len(f["input_ids"]) for f in batch]) 
     #max_len = max([f["input_ids"].shape[1] for f in batch]) 
     #print(max_len) 
@@ -45,16 +48,11 @@ def collate_fn(batch):
     labels = torch.tensor(labels, dtype=torch.long)
     outputs = { "input_ids": input_ids, "attention_mask": input_mask, "labels": labels }
     return outputs
-    
-
-#TODO Finish editing the testing flag: for now store the incorrect/correct examples
-#want a way extract sentences from the batch where labels are incorrect. 
-#Per element boolean if the preds and labels match 
-
-#TODO Do we want to add a wandb wrapper??? ]
-#TODO at a minimum, we need to store/print train&val loss 
-
+   
 def eval(args, data, model, tokenizer, test=False):
+    """
+    Main evaluation loop for a fine-tuned model.
+    """
     # Set model to eval mode. Load metric and create data loader.  
     print("Evaluating") 
     model.eval() 
@@ -67,17 +65,6 @@ def eval(args, data, model, tokenizer, test=False):
     # Lists to store results. 
     preds_list = []
     labels_list = []
-    
-    # collect correct and incorrect examples  
-    correct = {} 
-    correct["sentence"] = []
-    correct["label"] = []
-    correct["prob"] = []  
-    
-    incorrect = {} 
-    incorrect["sentence"] = []
-    incorrect["label"] = []
-    incorrect["prob"] = [] 
     
     # main EVAL loop 
     for idx, batch in enumerate(eval_loader):
@@ -96,31 +83,7 @@ def eval(args, data, model, tokenizer, test=False):
         labels = batch["labels"].detach().cpu().numpy() 
         labels_list.append(labels)  
         probs = torch.nn.functional.softmax(logits, dim=1)  
-         
-        # Get indices of correct and incorrect labels 
-        correct_indx = np.where(preds == labels)[0] 
-        incorrect_indx = list(np.where(preds != labels)[0]) 
-        ids = batch['input_ids'] 
-         
-        for i in correct_indx:
-            ex = ids[i]  
-            ex = ex[ex != 0] 
-            correct["sentence"].append(tokenizer.decode(ex))
-            correct["label"].append(labels[i])
-            correct["prob"].append(max(probs[i]))
         
-        for i in incorrect_indx:
-            ex = ids[i]  
-            ex = ex[ex != 0] 
-            incorrect["sentence"].append(tokenizer.decode(ex))
-            incorrect["label"].append(labels[i])
-            incorrect["prob"].append(max(probs[i])) 
-    # Saving results          
-    with open(args.task + "_correct.pickle", "wb") as handle:  
-        pickle.dump(correct, handle)   
-    with open(args.task + "_incorrect.pickle", "wb") as handle:   
-        pickle.dump(incorrect, handle) 
-    
     # Compute Accuracy 
     preds = np.concatenate(preds_list, axis=0)
     labels = np.concatenate(labels_list, axis=0)
@@ -128,7 +91,10 @@ def eval(args, data, model, tokenizer, test=False):
 
     return acc 
 
-def train(args, train_data, eval_data, model):
+def train(args, train_data, model):
+    """
+    Fine-tune a model for a given task.
+    """
     # Instantiate Data Loader, optimizer & scheduler 
     train_loader = DataLoader(train_data, batch_size=args.batch_size, collate_fn=collate_fn, shuffle=True, drop_last=True) 
     optimizer = args.optimizer(model.parameters(), lr=1e-5) 
@@ -155,53 +121,23 @@ def train(args, train_data, eval_data, model):
             optimizer.step()
             
             # Clears all gradient calculations for the next round of training 
-            model.zero_grad()   
-        
-        # After each epoch, evaluate on validation data 
-        #results = eval(args, data=eval_data, model=model)         
-         
-        print("{} out of {} epochs completed".format(epoch+1, args.num_epochs))
-        print("Loss: {}".format(loss.item())) 
-        #print("Performance on Validation Set: {}".format(results)) 
-        print("------------------------------------------------------------------") 
-    # TODO: save model 
+            model.zero_grad()
+            
+    return None 
 
-
-def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data): 
+def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val): 
     # Create dictionary
     model.eval() 
     hidden_states = {} 
     hidden_states[12] = []  
-    for j in range(len(qnli_data['train']['label'])):
-        sentence = (qnli_data['train']['question'][j], qnli_data['train']['sentence'][j])
+    for j in range(len(qnli_data[train_val]['label'])):
+        sentence = (qnli_data[train_val]['question'][j], qnli_data[train_val]['sentence'][j])
         tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
         with torch.no_grad():
             outputs = model(**tokens_tensor, output_hidden_states=True)
             states = outputs.hidden_states
             hidden_states[12].append(np.squeeze(states[12])[-1])       
     return hidden_states
-
-"""
-def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data): 
-    # Create dictionary
-    model.eval()  
-    hidden_states = {} 
-    hidden_states[12] = []  
-    
-    # DataLoader & Device 
-    data_loader = DataLoader(qnli_data, batch_size=8, collate_fn=collate_fn, shuffle=False)    
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    model.to(device)
-     
-    for idx, batch in enumerate(data_loader):
-        batch = {key: value.to(device) for key, value in batch.items()} 
-        with torch.no_grad():
-            outputs = model(**batch, output_hidden_states=True)
-            states = outputs.hidden_states 
-            hidden_states[12].append(states[12][:,-1,:])       
-    
-    return hidden_states
-"""
 
 def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data):
     # Create dictionary
@@ -216,41 +152,8 @@ def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data):
             hidden_states[12].append(np.squeeze(states[12])[-1])         
     return hidden_states
 
-def get_hidden_states_sst2_bert(tokenizer, model, sst2_data): 
-    # Create dictionary
-    model.eval() 
-    hidden_states = {}
-    for i in range(1,13):
-        hidden_states[i] = []  
-    for sentence in sst2_data['validation']['sentence']: 
-        tokens_tensor = tokenizer(sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-        with torch.no_grad():
-            outputs = model(**tokens_tensor, output_hidden_states=True)
-            states = outputs.hidden_states
-            for i in range(1, len(states)):
-                hidden_states[i].append(np.squeeze(states[i])[0])         
-    return hidden_states
-
-def get_hidden_states_qnli_bert(tokenizer, model, qnli_data):
-    """Calculates the probability negative"""
-    # Create dictionary
-    model.eval() 
-    hidden_states = {}
-    
-    hidden_states[12] = []  
-    for j in range(len(qnli_data['validation']['label'])):
-        sentence = (qnli_data['validation']['question'][j], qnli_data['validation']['sentence'][j])
-        tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-        with torch.no_grad():
-            outputs = model(**tokens_tensor, output_hidden_states=True)
-            states = outputs.hidden_states 
-            hidden_states[12].append(np.squeeze(states[12])[0])       
-    return hidden_states
-
-def get_pred_sst2(sentence, tokenizer, model):
-   
+def get_pred(sentence, tokenizer, model):   
     tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-       
     model.eval(); 
     
     with torch.no_grad(): 
@@ -258,31 +161,16 @@ def get_pred_sst2(sentence, tokenizer, model):
         logits = outputs.logits
         probs = torch.nn.functional.softmax(logits, dim=1)
     return probs.argmax().item()
-
-
-def get_pred_qnli(sentence, tokenizer, model):
-
-    tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True) 
-    model.eval(); 
-    
-    with torch.no_grad(): 
-        outputs = model(**tokens_tensor)
-        logits = outputs.logits
-        probs = torch.nn.functional.softmax(logits, dim=1)
-    return probs.argmax().item()
-
+   
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_epochs", default=10, type=int)
     parser.add_argument("--batch_size", default=10, type=int)
     parser.add_argument("--task", default="sst2", type=str)
     parser.add_argument("--hidden_states", default=True, type=bool)
-    parser.add_argument("--model", default="gpt2", type=str)
     parser.add_argument("--optimizer", default=AdamW)
     parser.add_argument("--seed", default=83, type=str) 
     parser.add_argument("--train", default=False, type=bool) 
-    parser.add_argument("--rogue_dim", default=False, type=bool)
-    #parser.add_argument("--scheduler") 
     args = parser.parse_args() 
     
     print(args) 
@@ -299,22 +187,11 @@ def main():
     if torch.cuda.is_available(): torch.cuda.manual_seed(args.seed)
     
   
-    #Instantiate the tokenizer and add the padding token 
-    # TODO: does it matter what side we pad on???  
-    
+    #Instantiate the tokenizer and add the padding token     
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2") 
     tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token 
    
-    if args.model == "bert": 
-        tokenizer = BertTokenizerFast.from_pretrained("bert-base-cased") 
-        tokenizer.padding_side = "right"
-        tokenizer.pad_token = tokenizer.eos_token  
-  
-    if args.model == "distbert": 
-        tokenizer = DistilBertTokenizerFast.from_pretrained("distilbert-base-cased") 
-        tokenizer.padding_side = "right"
-        tokenizer.pad_token = tokenizer.eos_token
 
     task_type = {
         "classification": [
@@ -322,16 +199,9 @@ def main():
             "qnli",
         ]
     }    
-    
-    
-    if args.task in task_type["classification"]:  
-        if args.model == "gpt2": 
-            model = GPT2ForSequenceClassification.from_pretrained("gpt2", num_labels=num_labels)
-        if args.model == "bert":  
-            model = BertForSequenceClassification.from_pretrained("bert-base-cased", num_labels=num_labels) 
-        if args.model == "distbert":  
-            model = DistilBertForSequenceClassification.from_pretrained("distilbert-base-cased", num_labels=num_labels)
-
+      
+   
+    model = GPT2ForSequenceClassification.from_pretrained("gpt2", num_labels=num_labels)
     #Specifying the pad token  
     model.config.pad_token_id = model.config.eos_token_id
 
@@ -360,9 +230,7 @@ def main():
     
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
     
-    args.train = False
     
-    """
     if args.train==True:   
         print("Preparing to train.")  
         train(args=args, train_data=train_data, eval_data=eval_data, model=model)
@@ -391,55 +259,18 @@ def main():
             print("Making hidden states for QNLI") 
             #QNLI Hidden States 
             qnli_data = load_dataset("glue", "qnli") 
-            qnli_states = get_hidden_states_qnli_gpt2(tokenizer, model,qnli_data) 
+            qnli_states = get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val="train") 
             hickle.dump(qnli_states, args.model + "_qnli_train_hidden_states.hickle", mode='w') 
+            
+            qnli_states = get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val="validation") 
+            hickle.dump(qnli_states, args.model + "_qnli_validation_hidden_states.hickle", mode='w') 
 
             print("hidden states saved") 
-     
-    """    
+        
     
-    print("Loading model from checkpoint.")  
-    model.load_state_dict(torch.load("../models/"+ args.model + "_" + args.task + ".pth", map_location=device)) 
-    #print("Model loaded... On to testing!")
-    
-    if args.rogue_dim==True:    
-        # load dataset labels 
-        if args.task=="sst2":
-            data = load_dataset("glue", "sst2") 
-        else:
-            data = load_dataset("glue", "qnli")
-        
-        # load last hidden state representations 
-        print("Loading hidden states") 
-        train = hickle.load(args.model + "_"+ args.task  + "_train_hidden_states.hickle") 
-        train = np.vstack(train[12]) 
-        val = hickle.load(args.model + "_"+ args.task  + "_validation_hidden_states.hickle") 
-        val = np.vstack(val[12]) 
-        # Train 1D SVM:
-        print("Training SVM on dimension 496")
-        clf = svm.SVC()
-        clf = clf.fit(np.reshape(train[:,496], (-1,1)), data["train"]["label"])
-        print("SVM trained!") 
-        # Evaluate
-        num_val = len(data["validation"]["label"]) 
-        correct = 0  
-        agree = 0  
-        
-        for i in range(num_val):
-            clf_pred = clf.predict(np.reshape(val[i][496], (-1,1))) 
-            if clf_pred == data["validation"]["label"][i]: 
-                correct += 1 
-            sentence = (data["validation"]["question"][i], data["validation"]["sentence"][i])
-            if clf_pred == get_pred_qnli(sentence, tokenizer, model):
-                agree += 1
-        
-        print("Performance Acc. of Dim496 on {}: {}".format(args.task, correct/num_val))
-        print("Performance Agreement: {}".format(agree/num_val))  
-       
-       # Agreement in prediction: 
 
-    #results = eval(args=args, data=eval_data, model=model, tokenizer=tokenizer, test=True) 
-    #print("TESTING ACCURACY: ", results)
+    results = eval(args=args, data=eval_data, model=model, tokenizer=tokenizer, test=True) 
+    print("TESTING ACCURACY: ", results)
     
 if __name__  == "__main__":
     main()
