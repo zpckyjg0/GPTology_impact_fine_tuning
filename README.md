@@ -19,5 +19,9 @@ Note that setting ``--train False`` assumes that there is already a fine-trained
 
 ## Analysis
 This script will perform CKA and rogue dimensions analysis. CKA analysis will output a hickle file which can be used in visuals.py. 
-```python3 run_models.py --task "sst2" --True ```
+
+```python3 run_models.py --task "sst2" --cka True --rogue_dim True ```
+
+## Visuals
+This jupyter notebook recreates all the images present in the paper. You can need to have run all of the previous scripts in order to make the images!
 
