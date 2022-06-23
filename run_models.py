@@ -1,7 +1,7 @@
 #############################################################
 #############################################################
 #############################################################    
-"""CODE FOR THIS FILE WAS ADAPTED FROM: 
+"""CODE FOR TRAINING WAS ADAPTED FROM: 
  https://github.com/INK-USC/IsoBN
  The original code was meant for fine tuning
  BERT on GLUE tasks and looks at whether adding
@@ -127,27 +127,41 @@ def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val):
     # Create dictionary
     model.eval() 
     hidden_states = {} 
-    hidden_states[12] = []  
+    for i in range(13):
+       hidden_states[i] = []  
     for j in range(len(qnli_data[train_val]['label'])):
         sentence = (qnli_data[train_val]['question'][j], qnli_data[train_val]['sentence'][j])
         tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
         with torch.no_grad():
             outputs = model(**tokens_tensor, output_hidden_states=True)
             states = outputs.hidden_states
-            hidden_states[12].append(np.squeeze(states[12])[-1])       
+            
+            if train_val == "train":
+                hidden_states[12].append(np.squeeze(states[12])[-1])
+            if train_val == "validation":
+                for i in range(1, len(states)):
+                    hidden_states[i].append(np.squeeze(states[i])[0]) 
+                
     return hidden_states
 
-def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data):
+def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data, train_val="train"):
     # Create dictionary
     model.eval() 
     hidden_states = {}
-    hidden_states[12] = []  
-    for sentence in sst2_data: 
+    for i in range(13):
+       hidden_states[i] = [] 
+    for sentence in sst2_data[train_val]['sentence']: 
         tokens_tensor = tokenizer(sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
         with torch.no_grad():
             outputs = model(**tokens_tensor, output_hidden_states=True)
             states = outputs.hidden_states
-            hidden_states[12].append(np.squeeze(states[12])[-1])         
+              
+            if train_val == "train":
+                hidden_states[12].append(np.squeeze(states[12])[-1])
+            if train_val == "validation":
+                for i in range(1, len(states)):
+                    hidden_states[i].append(np.squeeze(states[i])[0])         
+    
     return hidden_states
 
 def get_pred(sentence, tokenizer, model):   
