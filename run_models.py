@@ -30,8 +30,6 @@ from tqdm import tqdm
 import argparse 
 import random
 import os
-import pickle 
-from sklearn import svm
 
 def collate_fn(batch):
     """
