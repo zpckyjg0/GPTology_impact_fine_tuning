@@ -127,6 +127,7 @@ def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val):
     # Create dictionary
     model.eval() 
     hidden_states = {} 
+    # instantiate dictionary with key that indicates decoder block number. 
     for i in range(13):
        hidden_states[i] = []  
     for j in range(len(qnli_data[train_val]['label'])):
@@ -135,12 +136,13 @@ def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val):
         with torch.no_grad():
             outputs = model(**tokens_tensor, output_hidden_states=True)
             states = outputs.hidden_states
-            
+            # we collect last token representations for the 12th decoder block for the training data only for the purpose of training a 1D SVM
             if train_val == "train":
                 hidden_states[12].append(np.squeeze(states[12])[-1])
+            # collect hidden states from each decoder block.
             if train_val == "validation":
                 for i in range(1, len(states)):
-                    hidden_states[i].append(np.squeeze(states[i])[0]) 
+                    hidden_states[i].append(np.squeeze(states[i])[-1]) 
                 
     return hidden_states
 
@@ -155,12 +157,13 @@ def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data, train_val="train"):
         with torch.no_grad():
             outputs = model(**tokens_tensor, output_hidden_states=True)
             states = outputs.hidden_states
-              
+            # we collect last token representations for the 12th decoder block for the training data only for the purpose of training a 1D SVM.
             if train_val == "train":
                 hidden_states[12].append(np.squeeze(states[12])[-1])
+            # collect hidden states from each decoder block. 
             if train_val == "validation":
                 for i in range(1, len(states)):
-                    hidden_states[i].append(np.squeeze(states[i])[0])         
+                    hidden_states[i].append(np.squeeze(states[i])[-1])         
     
     return hidden_states
 
@@ -183,6 +186,7 @@ def main():
     parser.add_argument("--optimizer", default=AdamW)
     parser.add_argument("--seed", default=83, type=str) 
     parser.add_argument("--train", default=False, type=bool) 
+    parser.add_argument("--evaluate", default=True, type=bool)
     args = parser.parse_args() 
     
     print(args) 
@@ -242,7 +246,6 @@ def main():
     
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
     
-    
     if args.train==True:   
         print("Preparing to train.")  
         train(args=args, train_data=train_data, eval_data=eval_data, model=model)
@@ -260,12 +263,13 @@ def main():
             print("Making hidden states for SST2")  
             #SST2 Hidden States 
             sst2_data = load_dataset("glue", "sst2") 
-            sst2_train_states = get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data["train"]["sentence"]) 
+            sst2_train_states = get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data, train_val="train") 
             hickle.dump(sst2_train_states, args.model + "_sst2_train_hidden_states.hickle", mode='w') 
-
-            sst2_validation_states = get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data["validation"]["sentence"]) 
+            print("hidden train states saved")
+            
+            sst2_validation_states = get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data, train_val="validation) 
             hickle.dump(sst2_validation_states, args.model + "_sst2_validation_hidden_states.hickle", mode='w') 
-            print("hidden states saved")        
+            print("hidden validation states saved")        
         
         if args.task == "qnli": 
             print("Making hidden states for QNLI") 
@@ -273,16 +277,16 @@ def main():
             qnli_data = load_dataset("glue", "qnli") 
             qnli_states = get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val="train") 
             hickle.dump(qnli_states, args.model + "_qnli_train_hidden_states.hickle", mode='w') 
+            print("hidden train states saved")
             
             qnli_states = get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data, train_val="validation") 
             hickle.dump(qnli_states, args.model + "_qnli_validation_hidden_states.hickle", mode='w') 
-
-            print("hidden states saved") 
+            print("hidden validation states saved") 
         
     
-
-    results = eval(args=args, data=eval_data, model=model, tokenizer=tokenizer, test=True) 
-    print("TESTING ACCURACY: ", results)
+    if args.evaluate == True
+        results = eval(args=args, data=eval_data, model=model, tokenizer=tokenizer, test=True) 
+        print("TESTING ACCURACY: ", results)
     
 if __name__  == "__main__":
     main()
