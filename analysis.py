@@ -161,6 +161,31 @@ def feature_space_linear_cka(features_x, features_y, debiased=False):
 
     return dot_product_similarity / (normalization_x * normalization_y)
 
+def cka_scores(data1, data2)
+    """ 
+    data1 and data2 are hidden state dictionaries procuded by the run_models.py script. 
+    This function will give compute CKA scores between activations from data1 and data2. 
+    To compare similarities between different decoder blocks in the same network, set data1 = data2. 
+    """
+    scores = np.zeros((12,12))
+    # Note that the first layer here is the LEXICAL embedding which is why we skip it. 
+    for i in range(1,13):
+        for j in range(1,13):
+            scores[i-1][j-1] = cka(gram_linear(np.vstack(data1)), gram_linear(np.vstack(data2))
+    hickle.dump(scores, args.task + "_cka.hickle", mode='w')
+    return None
+                                   
+def principal_rogue_dimension(data, n=10):
+    """
+    Data: hidden state representations across a corpus of text.
+    n: number of rogue dimension indices to return.
+    This function calculates the top n principal rogue dimensions 
+    """
+    m2 = np.diagonal(np.cov(np.vstack(data).T))
+    idx = np.argsort(m2)[-n:]
+    print(idx[::-1])
+    return idx[::-1]
+                                           
 
 def main():
     parser = argparse.ArgumentParser()
@@ -168,7 +193,6 @@ def main():
     parser.add_argument("--optimizer", default=AdamW)
     parser.add_argument("--seed", default=83, type=str) 
     parser.add_argument("--rogue_dim", default=False, type=bool)
-    parser.add_argument("--cka", default=False, type=bool)
     args = parser.parse_args() 
     
     print(args) 
@@ -190,18 +214,7 @@ def main():
     #Specifying the pad token  
     model.config.pad_token_id = model.config.eos_token_id
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
-    
-    if args.cka==True:
-        # Load Hidden states for the validation data.
-        val = hickle.load(args.model + "_"+ args.task  + "_validation_hidden_states.hickle") 
-        scores = np.zeros((12,12))
-        # Note that the first layer here is the LEXICAL embedding which is why we skip it. 
-        for i in range(1,13):
-            for j in range(1,13):
-                scores[i-1][j-1] = cka(gram_linear(np.vstack(val[i])), gram_linear(np.vstack(val[j]))
-        hickle.dump(scores, args.task + "_cka.hickle", mode='w')
-        return None
- 
+
     if args.rogue_dim==True:    
         # load dataset labels 
         if args.task=="sst2":
