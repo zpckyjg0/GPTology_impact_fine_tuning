@@ -13,71 +13,6 @@ import random
 import os
 from sklearn import svm
 
-# TODO: this collate function assumes the inputs are list-- I'm returning tensors
-# Do we keep as tensors and edit this function or what? 
-def collate_fn(batch):
-    max_len = max([len(f["input_ids"]) for f in batch]) 
-    #max_len = max([f["input_ids"].shape[1] for f in batch]) 
-    #print(max_len) 
-    input_ids = [f["input_ids"] + [0] * (max_len - len(f["input_ids"])) for f in batch]
-    input_mask = [[1.0] * len(f["input_ids"]) + [0.0] * (max_len - len(f["input_ids"])) for f in batch]
-    labels = [f["labels"] for f in batch]
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-    input_mask = torch.tensor(input_mask, dtype=torch.float)
-    labels = torch.tensor(labels, dtype=torch.long)
-    outputs = { "input_ids": input_ids, "attention_mask": input_mask, "labels": labels }
-    return outputs
-
-def get_hidden_states_qnli_gpt2(tokenizer, model, qnli_data): 
-    # Create dictionary
-    model.eval() 
-    hidden_states = {} 
-    hidden_states[12] = []  
-    for j in range(len(qnli_data['train']['label'])):
-        sentence = (qnli_data['train']['question'][j], qnli_data['train']['sentence'][j])
-        tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-        with torch.no_grad():
-            outputs = model(**tokens_tensor, output_hidden_states=True)
-            states = outputs.hidden_states
-            hidden_states[12].append(np.squeeze(states[12])[-1])       
-    return hidden_states
-
-def get_hidden_states_sst2_gpt2(tokenizer, model, sst2_data):
-    # Create dictionary
-    model.eval() 
-    hidden_states = {}
-    hidden_states[12] = []  
-    for sentence in sst2_data: 
-        tokens_tensor = tokenizer(sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-        with torch.no_grad():
-            outputs = model(**tokens_tensor, output_hidden_states=True)
-            states = outputs.hidden_states
-            hidden_states[12].append(np.squeeze(states[12])[-1])         
-    return hidden_states
-
-def get_pred_sst2(sentence, tokenizer, model):
-   
-    tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True)
-       
-    model.eval(); 
-    
-    with torch.no_grad(): 
-        outputs = model(**tokens_tensor)
-        logits = outputs.logits
-        probs = torch.nn.functional.softmax(logits, dim=1)
-    return probs.argmax().item()
-   
-def get_pred_qnli(sentence, tokenizer, model):
-
-    tokens_tensor = tokenizer(*sentence, return_tensors='pt', padding=False, max_length=256, truncation=True) 
-    model.eval(); 
-    
-    with torch.no_grad(): 
-        outputs = model(**tokens_tensor)
-        logits = outputs.logits
-        probs = torch.nn.functional.softmax(logits, dim=1)
-    return probs.argmax().item()
-   
 #############################################################
 #############################################################
 #############################################################    
@@ -255,8 +190,6 @@ def main():
     #Specifying the pad token  
     model.config.pad_token_id = model.config.eos_token_id
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu' 
-    
-
     
     if args.cka==True:
         # Load Hidden states for the validation data.
