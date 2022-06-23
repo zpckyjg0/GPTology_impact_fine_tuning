@@ -1,1 +1,8 @@
-
+numpy==1.21.1
+transformers==4.11.3
+datasets==2.3.2
+nltk==3.6.5
+regex==2021.10.8
+argparse==1.4.0
+hickle==4.0.4
+matplotlib==3.5.2
