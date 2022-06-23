@@ -16,6 +16,8 @@ Use ```run_models.py``` to fine-tune GPT-2 for SST-2 and QNLI. To train a model 
 Note that setting ``--train False`` assumes that there is already a fine-trained model and will throw an error if no model has been fine-tuned. 
 
 ## Analysis
-This script will perform CKA and rogue dimensions analysis. CKA analysis will output a hickle file which can be used in visuals.py. 
+This script will perform CKA and rogue dimensions analysis. CKA analysis will output a hickle file which can be used in visualize results. 
 
-```python3 run_models.py --task "sst2" --cka True --rogue_dim True ```
+```python3 run_models.py --task "sst2"  --rogue_dim True ```
+
+The cka_scores() function in this script can be used to calculate the CKA scores for each model's hidden state representations. 
